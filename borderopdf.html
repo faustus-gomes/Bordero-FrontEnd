@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Processamento de Borderô</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        /* Estilo personalizado para o logo */
+        .header-logo {
+            padding: 20px 0;
+            background-color: #fff;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .logo {
+            max-height: 80px;
+            width: auto;
+        }
+        .status-processing {
+            color: #856404;
+            background-color: #fff3cd;
+            border-color: #ffeaa7;
+        }
+        .status-success {
+            color: #155724;
+            background-color: #d4edda;
+            border-color: #c3e6cb;
+        }
+        .status-error {
+            color: #721c24;
+            background-color: #f8d7da;
+            border-color: #f5c6cb;
+        }
+        .progress-bar-custom {
+            background-color: #007bff;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header com logo centralizado -->
+    <header class="header-logo">
+        <div class="container">
+            <div class="row justify-content-center">
+                <div class="col-auto">
+                    <img src="image/header.png" alt="Logo" class="logo">
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Formulário de Processamento -->
+    <main class="container d-flex justify-content-center align-items-center" style="min-height: 70vh;">
+        <div class="process-container bg-white p-4 rounded shadow-sm" style="width: 100%; max-width: 500px;">
+            <h1 class="text-center mb-4">Processar Borderô</h1>
+            
+            <!-- Formulário -->
+            <form id="processForm">
+                <div class="mb-3">
+                    <label for="numeroBordero" class="form-label">Número do Borderô</label>
+                    <input type="text" class="form-control" id="numeroBordero" placeholder="Ex: 61035" required>
+                    <div class="form-text">Digite o número do borderô que deseja processar.</div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary w-100" id="processButton">
+                    <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                    Processar Borderô
+                </button>
+            </form>
+
+            <!-- Área de Resultados -->
+            <div id="resultArea" class="mt-4 d-none">
+                <div class="alert" id="statusAlert">
+                    <h5 class="alert-heading" id="statusTitle">Status do Processamento</h5>
+                    <div id="statusMessage"></div>
+                </div>
+
+                <!-- Progress Bar -->
+                <div class="progress mb-3 d-none" id="progressContainer">
+                    <div class="progress-bar progress-bar-custom" role="progressbar" style="width: 0%" id="progressBar"></div>
+                </div>
+
+                <!-- Detalhes do Processamento -->
+                <div id="processDetails" class="d-none">
+                    <h6>Detalhes do Processamento:</h6>
+                    <div id="detailsContent" class="small"></div>
+                </div>
+
+                <!-- Dentro da div#resultArea, após o botão de novo processamento -->
+                <button class="btn btn-success w-100 mt-2 d-none" id="abrirPdfButton">
+                    📄 Abrir PDF Gerado
+                </button>
+
+                <!-- Botão de Novo Processamento -->
+                <button class="btn btn-outline-primary w-100 mt-3 d-none" id="newProcessButton">
+                    Novo Processamento
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    document.getElementById('processForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const numeroBordero = document.getElementById('numeroBordero').value;
+        const processButton = document.getElementById('processButton');
+        const resultArea = document.getElementById('resultArea');
+        const statusAlert = document.getElementById('statusAlert');
+        const statusTitle = document.getElementById('statusTitle');
+        const statusMessage = document.getElementById('statusMessage');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressBar = document.getElementById('progressBar');
+        const processDetails = document.getElementById('processDetails');
+        const detailsContent = document.getElementById('detailsContent');
+        const newProcessButton = document.getElementById('newProcessButton');
+
+        // Reset e mostrar área de resultados
+        resultArea.classList.remove('d-none');
+        statusAlert.className = 'alert status-processing';
+        statusTitle.textContent = 'Processando...';
+        statusMessage.innerHTML = 'Iniciando processamento do borderô...';
+        progressContainer.classList.remove('d-none');
+        processDetails.classList.add('d-none');
+        newProcessButton.classList.add('d-none');
+        
+        // Desabilitar botão e mostrar spinner
+        processButton.disabled = true;
+        processButton.querySelector('.spinner-border').classList.remove('d-none');
+
+        try {
+            const response = await fetch('http://10.3.0.100:8085/api/processar-bordero', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ numeroBordero: numeroBordero })
+            });
+
+            const data = await response.json();
+            
+            if (!data.success) {
+                throw new Error(data.error || 'Erro ao iniciar processamento');
+            }
+
+            const processoId = data.processo_id;
+            
+            // Verificar status periodicamente
+            const checkStatus = setInterval(async () => {
+                try {
+                    const statusResponse = await fetch(`http://10.3.0.100:8085/api/status-processo/${processoId}`);
+                    const statusData = await statusResponse.json();
+                    
+                    if (!statusData.success) {
+                        clearInterval(checkStatus);
+                        throw new Error(statusData.error);
+                    }
+
+                    // Atualizar UI
+                    progressBar.style.width = statusData.progress + '%';
+                    statusMessage.innerHTML = statusData.message;
+
+                    // Atualizar detalhes se houver
+                    /*if (statusData.details && statusData.details.length > 0) {
+                        processDetails.classList.remove('d-none');
+                        detailsContent.innerHTML = statusData.details.map(detail => 
+                            `<div class="${detail.includes('✅') ? 'text-success' : 'text-danger'}">${detail}</div>`
+                        ).join('');
+                    }
+                    ********************************************************************
+                    */
+                   // Processamento concluído
+                    if (statusData.status === 'success') {
+                        clearInterval(checkStatus);
+                        
+                        statusAlert.className = 'alert status-success';
+                        statusTitle.textContent = 'Processamento Concluído!';
+                        
+                        // ✅ ESTATÍSTICAS NA MENSAGEM PRINCIPAL
+                        const stats = statusData.estatisticas || {};
+                        let messageHTML = `
+                            <strong>Borderô ${numeroBordero} processado com sucesso!</strong><br>
+                            <div class="mt-2">
+                                <strong>📊 ${stats.total_encontrados || 0} de ${stats.total_api || 0} arquivos processados</strong>
+                                ${stats.total_faltantes > 0 ? `<br><span class="text-warning">⚠️ ${stats.total_faltantes} arquivos não encontrados</span>` : ''}
+                            </div>
+                            <div class="mt-2">
+                                <span class="text-success">✅ PDF gerado: Bordero${numeroBordero}.pdf</span><br>
+                                <span class="text-success">✅ Upload FTP concluído</span>
+                            </div>
+                        `;
+                        
+                        statusMessage.innerHTML = messageHTML;
+                        
+                        // ✅ DETALHES COM ESTATÍSTICAS (só uma vez)
+                        if (statusData.details && statusData.details.length > 0) {
+                            processDetails.classList.remove('d-none');
+                            
+                            let detailsHTML = '';
+                            
+                            // Adiciona estatísticas expandidas
+                            if (stats.total_api > 0) {
+                                detailsHTML += `
+                                    <div class="mb-3 p-3 border rounded bg-light">
+                                        <h6 class="mb-2">📊 Estatísticas Detalhadas</h6>
+                                        <div class="row text-center">
+                                            <div class="col-4">
+                                                <div class="text-primary">
+                                                    <div class="fs-4">${stats.total_api}</div>
+                                                    <small>Total na API</small>
+                                                </div>
+                                            </div>
+                                            <div class="col-4">
+                                                <div class="text-success">
+                                                    <div class="fs-4">${stats.total_encontrados || 0}</div>
+                                                    <small>Encontrados</small>
+                                                </div>
+                                            </div>
+                                            <div class="col-4">
+                                                <div class="text-warning">
+                                                    <div class="fs-4">${stats.total_faltantes || 0}</div>
+                                                    <small>Não encontrados</small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `;
+                            }
+                            
+                            // Adiciona lista de arquivos
+                            detailsHTML += `
+                                <div class="mb-2">
+                                    <strong>📝 Detalhes do Processamento:</strong>
+                                </div>
+                                <div style="max-height: 300px; overflow-y: auto;" class="border p-2 rounded">
+                                    ${statusData.details.map(detail => 
+                                        `<div class="${detail.includes('✅') ? 'text-success' : detail.includes('❌') ? 'text-danger' : 'text-info'} small mb-1">
+                                            ${detail}
+                                        </div>`
+                                    ).join('')}
+                                </div>
+                            `;
+                            
+                            detailsContent.innerHTML = detailsHTML;
+                        }
+                        
+                        // Botão de abrir PDF
+                        const abrirPdfButton = document.getElementById('abrirPdfButton');
+                        abrirPdfButton.classList.remove('d-none');
+                        abrirPdfButton.onclick = function() {
+                            window.open(`http://10.3.0.100:8085/api/abrir-pdf/${numeroBordero}`, '_blank');
+                        };
+                        
+                        newProcessButton.classList.remove('d-none');
+                        processButton.disabled = false;
+                        processButton.querySelector('.spinner-border').classList.add('d-none');
+                    } else if (statusData.status === 'error') {
+                        clearInterval(checkStatus);
+                        
+                        statusAlert.className = 'alert status-error';
+                        statusTitle.textContent = 'Processamento com Observações';
+                        
+                        // ✅ MOSTRA ESTATÍSTICAS MESMO EM ERRO
+                        const stats = statusData.estatisticas || {};
+                        let errorMessage = `<strong>${statusData.message}</strong>`;
+                        
+                        if (stats.total_api > 0) {
+                            errorMessage += `<br><small class="text-muted">
+                                API retornou ${stats.total_api} arquivos, 
+                                mas ${stats.total_encontrados || 0} foram encontrados localmente
+                            </small>`;
+                        }
+                        
+                        statusMessage.innerHTML = errorMessage;
+                        
+                        // Mostra detalhes mesmo em erro
+                        if (statusData.details && statusData.details.length > 0) {
+                            processDetails.classList.remove('d-none');
+                            detailsContent.innerHTML = statusData.details.map(detail => 
+                                `<div class="${detail.includes('✅') ? 'text-success' : detail.includes('❌') ? 'text-danger' : 'text-warning'}">${detail}</div>`
+                            ).join('');
+                        }
+                        
+                        newProcessButton.classList.remove('d-none');
+                        processButton.disabled = false;
+                        processButton.querySelector('.spinner-border').classList.add('d-none');
+                    }
+
+                } catch (error) {
+                    clearInterval(checkStatus);
+                    console.error('Erro ao verificar status:', error);
+                    
+                    statusAlert.className = 'alert status-error';
+                    statusTitle.textContent = 'Erro';
+                    statusMessage.innerHTML = `<strong>Erro:</strong> ${error.message}`;
+                    
+                    newProcessButton.classList.remove('d-none');
+                    processButton.disabled = false;
+                    processButton.querySelector('.spinner-border').classList.add('d-none');
+                }
+            }, 2000); // Verificar a cada 2 segundos
+
+        } catch (error) {
+            console.error('Erro:', error);
+            
+            statusAlert.className = 'alert status-error';
+            statusTitle.textContent = 'Erro';
+            statusMessage.innerHTML = `<strong>Erro:</strong> ${error.message}`;
+            
+            newProcessButton.classList.remove('d-none');
+            processButton.disabled = false;
+            processButton.querySelector('.spinner-border').classList.add('d-none');
+        }
+    });
+
+    document.getElementById('newProcessButton').addEventListener('click', function() {
+        // Reset do formulário
+        document.getElementById('processForm').reset();
+        document.getElementById('resultArea').classList.add('d-none');
+        document.getElementById('processButton').disabled = false;
+        document.getElementById('processButton').querySelector('.spinner-border').classList.add('d-none');
+        
+        // ✅ OCULTAR BOTÃO DE ABRIR PDF NO NOVO PROCESSAMENTO
+        document.getElementById('abrirPdfButton').classList.add('d-none');
+    });
+</script>
+</body>
+</html>
