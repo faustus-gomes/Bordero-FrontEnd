@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dados do Grid</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .header-logo {
+            padding: 20px 0;
+            background-color: #fff;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .logo {
+            max-height: 80px;
+            width: auto;
+        }
+        .btn-arrow {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            margin: 20px auto;
+        }
+        .loading-spinner {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+        .error-alert {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <header class="header-logo">
+        <div class="container">
+            <div class="row justify-content-center">
+                <div class="col-auto">
+                    <img src="image/header.png" alt="Logo" class="logo">
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        <div class="row justify-content-center">
+            <div class="col-12">
+                <h1 class="text-center my-4">ASPB-Import Planium</h1>
+                
+                <!-- Alertas de erro -->
+                <div class="alert alert-danger error-alert" id="corsError">
+                    <strong>Erro de CORS:</strong> Configure o CORS no backend Spring Boot.
+                </div>
+
+                <div class="alert alert-warning error-alert" id="serverError">
+                    <strong>Servidor indisponível:</strong> Verifique se o backend está rodando.
+                </div>
+
+                <div class="alert alert-info error-alert" id="htmlResponseError">
+                    <strong>Resposta inesperada:</strong> O servidor retornou HTML em vez de JSON.
+                </div>
+
+                <!-- Loading -->
+                <div class="loading-spinner" id="loadingSpinner">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Carregando...</span>
+                    </div>
+                    <p class="mt-2">Carregando dados...</p>
+                </div>
+
+                <!-- Grid -->
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover" id="dataGrid">
+                        <thead class="table-dark">
+                            <tr id="tableHeader"></tr>
+                        </thead>
+                        <tbody id="tableBody"></tbody>
+                    </table>
+                </div>
+
+                <div class="alert alert-warning text-center d-none" id="noDataMessage">
+                    Nenhum dado encontrado.
+                </div>
+
+                <!-- Botão próxima etapa -->
+                <div class="text-center">
+                    <button class="btn btn-primary btn-arrow" id="nextStepBtn" title="Próxima Etapa" disabled>
+                        →
+                    </button>
+                    <p class="text-muted">Próxima Etapa</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const tableHeader = document.getElementById('tableHeader');
+            const tableBody = document.getElementById('tableBody');
+            const loadingSpinner = document.getElementById('loadingSpinner');
+            const noDataMessage = document.getElementById('noDataMessage');
+            const nextStepBtn = document.getElementById('nextStepBtn');
+            const corsError = document.getElementById('corsError');
+            const serverError = document.getElementById('serverError');
+            const htmlResponseError = document.getElementById('htmlResponseError');
+
+            async function loadGridData() {
+                try {
+                    loadingSpinner.style.display = 'block';
+                    hideAllErrors();
+                    
+                    console.log('Fazendo requisição para: http://localhost:8083/api/procedures/dados_grid');
+                    
+                    const response = await fetch('http://localhost:8083/api/procedures/dados_grid');
+                    
+                    console.log('Status da resposta:', response.status);
+                    console.log('Content-Type:', response.headers.get('content-type'));
+                    
+                    // Verifica se a resposta é JSON
+                    const contentType = response.headers.get('content-type');
+                    if (!contentType || !contentType.includes('application/json')) {
+                        const text = await response.text();
+                        console.log('Resposta não-JSON recebida:', text.substring(0, 200));
+                        throw new Error('Resposta não é JSON');
+                    }
+                    
+                    if (!response.ok) {
+                        throw new Error(`Erro HTTP: ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    console.log('Dados recebidos:', data);
+                    
+                    loadingSpinner.style.display = 'none';
+                    
+                    // VERIFICA SE HÁ DADOS REAIS PARA EXIBIR NO GRID
+                    if (hasGridData(data)) {
+                        displayData(data);
+                        nextStepBtn.disabled = false; // HABILITA apenas se tiver dados
+                        console.log('Botão HABILITADO - há dados no grid');
+                    } else {
+                        noDataMessage.classList.remove('d-none');
+                        nextStepBtn.disabled = true; // MANTÉM DESABILITADO
+                        console.log('Botão DESABILITADO - sem dados no grid');
+                    }
+                    
+                } catch (error) {
+                    console.error('Erro completo:', error);
+                    loadingSpinner.style.display = 'none';
+                    nextStepBtn.disabled = true; // MANTÉM DESABILITADO em erro
+                    console.log('Botão DESABILITADO - erro na requisição');
+                    
+                    if (error.message.includes('Resposta não é JSON')) {
+                        htmlResponseError.style.display = 'block';
+                    } else if (error.message.includes('Failed to fetch') || error.message.includes('CORS')) {
+                        corsError.style.display = 'block';
+                    } else {
+                        serverError.style.display = 'block';
+                    }
+                }
+            }
+
+            // Função mais rigorosa para verificar se há dados para o grid
+            function hasGridData(data) {
+                if (!data) {
+                    console.log('Sem dados: data é null ou undefined');
+                    return false;
+                }
+                
+                // Se for array, verifica se tem itens
+                if (Array.isArray(data)) {
+                    const hasData = data.length > 0;
+                    console.log('Array com', data.length, 'itens - tem dados:', hasData);
+                    return hasData;
+                }
+                
+                // Se for objeto, verifica se tem propriedades com valores
+                if (typeof data === 'object' && data !== null) {
+                    const keys = Object.keys(data);
+                    // Verifica se é um objeto de resposta (com propriedades como 'dados', 'mensagem', etc.)
+                    const isResponseObject = keys.includes('dados') || keys.includes('mensagem') || keys.includes('vazio');
+                    
+                    if (isResponseObject) {
+                        // Se for um objeto de resposta, verifica a propriedade 'dados'
+                        if (data.dados && Array.isArray(data.dados) && data.dados.length > 0) {
+                            console.log('Objeto de resposta com dados no array');
+                            return true;
+                        }
+                        if (data.vazio === true) {
+                            console.log('Objeto de resposta com vazio=true');
+                            return false;
+                        }
+                    }
+                    
+                    // Para objetos genéricos, verifica se tem propriedades com valores
+                    const hasProperties = keys.length > 0;
+                    console.log('Objeto com', keys.length, 'propriedades - tem dados:', hasProperties);
+                    return hasProperties;
+                }
+                
+                console.log('Tipo de dados não reconhecido');
+                return false;
+            }
+
+            function hideAllErrors() {
+                corsError.style.display = 'none';
+                serverError.style.display = 'none';
+                htmlResponseError.style.display = 'none';
+                noDataMessage.classList.add('d-none');
+            }
+
+            function displayData(data) {
+                tableHeader.innerHTML = '';
+                tableBody.innerHTML = '';
+
+                // Se for um objeto de resposta, usa a propriedade 'dados'
+                let dataToDisplay = data;
+                if (typeof data === 'object' && data !== null && data.dados && Array.isArray(data.dados)) {
+                    dataToDisplay = data.dados;
+                }
+
+                if (Array.isArray(dataToDisplay) && dataToDisplay.length > 0) {
+                    const firstItem = dataToDisplay[0];
+                    const headers = Object.keys(firstItem);
+                    
+                    headers.forEach(header => {
+                        const th = document.createElement('th');
+                        th.textContent = formatHeader(header);
+                        tableHeader.appendChild(th);
+                    });
+
+                    dataToDisplay.forEach(item => {
+                        const row = document.createElement('tr');
+                        headers.forEach(header => {
+                            const td = document.createElement('td');
+                            td.textContent = item[header] ?? '-';
+                            row.appendChild(td);
+                        });
+                        tableBody.appendChild(row);
+                    });
+                    
+                } else if (typeof dataToDisplay === 'object' && dataToDisplay !== null) {
+                    const headers = Object.keys(dataToDisplay);
+                    headers.forEach(header => {
+                        const th = document.createElement('th');
+                        th.textContent = formatHeader(header);
+                        tableHeader.appendChild(th);
+                    });
+
+                    const row = document.createElement('tr');
+                    headers.forEach(header => {
+                        const td = document.createElement('td');
+                        td.textContent = dataToDisplay[header] ?? '-';
+                        row.appendChild(td);
+                    });
+                    tableBody.appendChild(row);
+                }
+            }
+
+            function formatHeader(header) {
+                return header
+                    .replace(/_/g, ' ')
+                    .replace(/\b\w/g, l => l.toUpperCase());
+            }
+
+            nextStepBtn.addEventListener('click', function() {
+                alert('Indo para a próxima etapa...');
+            });
+
+            // Inicia com o botão desabilitado
+            nextStepBtn.disabled = true;
+            loadGridData();
+        });
+    </script>
+</body>
+</html>
